@@ -18,6 +18,7 @@ load_dotenv()
 
 BOT_TOKEN = os.getenv('BIRTHDAY_BOT_TOKEN')
 CHANNEL_ID = os.getenv('BIRTHDAY_CHANNEL_ID')
+NOTIFICATION_TIME_STR = os.getenv('NOTIFICATION_TIME', '08:00')
 ADMIN_IDS_STR = os.getenv('ADMIN_IDS', '')
 ADMIN_IDS = [int(x.strip()) for x in ADMIN_IDS_STR.split(',') if x.strip().isdigit()]
 
@@ -28,6 +29,12 @@ if not BOT_TOKEN:
     raise ValueError("BIRTHDAY_BOT_TOKEN не задан в .env файле")
 if not CHANNEL_ID:
     raise ValueError("BIRTHDAY_CHANNEL_ID не задан в .env файле")
+
+try:
+    NOTIF_HOUR, NOTIF_MINUTE = map(int, NOTIFICATION_TIME_STR.split(':'))
+except ValueError:
+    logger.error(f"Неверный формат NOTIFICATION_TIME ({NOTIFICATION_TIME_STR}). Используется 08:00.")
+    NOTIF_HOUR, NOTIF_MINUTE = 8, 0
 
 def check_admin(func):
     @wraps(func)
@@ -252,9 +259,9 @@ def main():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     application.job_queue.run_daily(
         check_birthdays,
-        time=time(hour=8, minute=0, tzinfo=TIMEZONE)
+        time=time(hour=NOTIF_HOUR, minute=NOTIF_MINUTE, tzinfo=TIMEZONE)
     )
-    logger.info("Бот запущен. Нажмите Ctrl+C для остановки.")
+    logger.info(f"Бот запущен. Время рассылки: {NOTIF_HOUR:02d}:{NOTIF_MINUTE:02d} (МСК). Нажмите Ctrl+C для остановки.")
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == '__main__':
