@@ -10,9 +10,15 @@ from functools import wraps
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
+    level=logging.WARNING
 )
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+# Отключаем технический спам от сторонних библиотек (httpx, telegram, apscheduler)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("telegram").setLevel(logging.WARNING)
+logging.getLogger("apscheduler").setLevel(logging.WARNING)
 
 load_dotenv()
 
@@ -149,7 +155,6 @@ async def check_birthdays(context: ContextTypes.DEFAULT_TYPE):
     birthdays = load_birthdays()
     today_birthdays = [entry for entry in birthdays if entry['date'] == today]
     if not today_birthdays:
-        logger.info("Сегодня нет дней рождения.")
         return
     for entry in today_birthdays:
         try:
