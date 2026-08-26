@@ -8,6 +8,7 @@ import pytz
 import logging
 from functools import wraps
 
+# Настройка логирования
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.WARNING
@@ -15,10 +16,11 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-# Отключаем технический спам от сторонних библиотек (httpx, telegram, apscheduler)
-logging.getLogger("httpx").setLevel(logging.WARNING)
-logging.getLogger("telegram").setLevel(logging.WARNING)
-logging.getLogger("apscheduler").setLevel(logging.WARNING)
+# Полностью глушим информационный шум от httpx, telegram и apscheduler
+for noisy_logger in ("httpx", "telegram", "telegram.ext", "apscheduler", "httpcore"):
+    l = logging.getLogger(noisy_logger)
+    l.setLevel(logging.WARNING)
+    l.propagate = False
 
 load_dotenv()
 
