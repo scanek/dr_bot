@@ -1,5 +1,6 @@
 import os
 import json
+import urllib.request
 from datetime import datetime, time
 from dotenv import load_dotenv
 from telegram import Update, ReplyKeyboardMarkup
@@ -7,6 +8,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 import pytz
 import logging
 from functools import wraps
+import asyncio
 
 # Настройка логирования
 logging.basicConfig(
@@ -24,11 +26,18 @@ for noisy_logger in ("httpx", "telegram", "telegram.ext", "apscheduler", "httpco
 
 load_dotenv()
 
+# Telegram Settings
 BOT_TOKEN = os.getenv('BIRTHDAY_BOT_TOKEN')
 CHANNEL_ID = os.getenv('BIRTHDAY_CHANNEL_ID')
 NOTIFICATION_TIME_STR = os.getenv('NOTIFICATION_TIME', '08:00')
 ADMIN_IDS_STR = os.getenv('ADMIN_IDS', '')
 ADMIN_IDS = [int(x.strip()) for x in ADMIN_IDS_STR.split(',') if x.strip().isdigit()]
+
+# GREEN-API Settings (Max messenger)
+MAX_INSTANCE_ID = os.getenv('MAX_INSTANCE_ID', '310022722468')
+MAX_API_TOKEN = os.getenv('MAX_API_TOKEN', 'abf4cb2b199f43cab915e7f2e5584a412acf7121d8d74bbf96')
+MAX_TARGET_CHAT_ID = os.getenv('MAX_TARGET_CHAT_ID') or os.getenv('МAX_TARGET_CHAT_ID') or os.getenv('GREEN_API_CHAT_ID', '-68054309844389')
+GREEN_API_HOST = os.getenv('GREEN_API_HOST', 'https://api.green-api.com')
 
 BIRTHDAYS_FILE = 'birthdays.json'
 TIMEZONE = pytz.timezone('Europe/Moscow')
@@ -43,6 +52,35 @@ try:
 except ValueError:
     logger.error(f"Неверный формат NOTIFICATION_TIME ({NOTIFICATION_TIME_STR}). Используется 08:00.")
     NOTIF_HOUR, NOTIF_MINUTE = 8, 0
+
+
+def _sync_send_to_max(text: str):
+    """Синхронная отправка сообщения в Макс через GREEN-API."""
+    if not MAX_INSTANCE_ID or not MAX_API_TOKEN or not MAX_TARGET_CHAT_ID:
+        logger.warning("Параметры GREEN-API (MAX_INSTANCE_ID, MAX_API_TOKEN, MAX_TARGET_CHAT_ID) не заданы.")
+        return
+    try:
+        url = f"{GREEN_API_HOST.rstrip('/')}/waInstance{MAX_INSTANCE_ID}/sendMessage/{MAX_API_TOKEN}"
+        payload = json.dumps({"chatId": MAX_TARGET_CHAT_ID, "message": text}).encode("utf-8")
+        req = urllib.request.Request(
+            url,
+            data=payload,
+            headers={"Content-Type": "application/json", "User-Agent": "BirthdayBot/1.0"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            if resp.status == 200:
+                logger.info(f"Поздравление успешно отправлено в Макс ({MAX_TARGET_CHAT_ID})")
+            else:
+                logger.warning(f"GREEN-API вернул статус: {resp.status}")
+    except Exception as e:
+        logger.warning(f"Ошибка при отправке в Макс: {e}")
+
+
+async def send_to_max(text: str):
+    """Асинхронная отправка сообщения в Макс."""
+    await asyncio.to_thread(_sync_send_to_max, text)
+
 
 def check_admin(func):
     @wraps(func)
@@ -159,6 +197,7 @@ async def check_birthdays(context: ContextTypes.DEFAULT_TYPE):
     if not today_birthdays:
         return
     for entry in today_birthdays:
+        # 1. Отправка поздравления в Telegram
         try:
             await context.bot.send_message(
                 chat_id=CHANNEL_ID,
@@ -168,9 +207,19 @@ async def check_birthdays(context: ContextTypes.DEFAULT_TYPE):
                 ),
                 parse_mode='HTML'
             )
-            logger.info(f"Отправлено поздравление для {entry['name']}")
+            logger.info(f"Отправлено поздравление для {entry['name']} в Telegram")
         except Exception as e:
-            logger.error(f"Не удалось отправить поздравление для {entry['name']}: {e}")
+            logger.error(f"Не удалось отправить поздравление для {entry['name']} в Telegram: {e}")
+
+        # 2. Дублирование поздравления в Макс через GREEN-API
+        try:
+            max_text = (
+                f"🎉 Сегодня день рождения у {entry['name']}!\n"
+                f"От лица коллектива участка брикетирования — поздравляем с Днём Рождения! 🎉"
+            )
+            await send_to_max(max_text)
+        except Exception as e:
+            logger.error(f"Не удалось отправить поздравление для {entry['name']} в Макс: {e}")
 
 @check_admin
 async def manual_check_birthdays(update: Update, context: ContextTypes.DEFAULT_TYPE):
